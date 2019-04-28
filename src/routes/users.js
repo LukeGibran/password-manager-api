@@ -2,7 +2,9 @@ const express = require('express');
 const router = new express.Router();
 const auth = require('../middleware/auth');
 const User = require('../model/user');
-const { sendWelcome } = require('../mails/account');
+const { sendWelcome, sendGoodbye } = require('../mails/account');
+const multer = require('multer');
+const sharp = require('sharp');
 
 router.post('/users', async (req, res) => {
   const user = new User(req.body);
@@ -84,10 +86,75 @@ router.delete('/users/me', auth, async (req, res) => {
   try {
     // await User.findByIdAndDelete(req.user._id);
     await req.user.remove();
+    sendGoodbye(req.user.email, req.user.fname);
     res.send(req.user);
   } catch (error) {
     res.status(400).send();
   }
 });
 
+// File upload for profile picture
+const upload = multer({
+  limits: {
+    fileSize: 1000000
+  },
+  fileFilter(req, file, cb) {
+    if (!file.originalname.match(/\.(jpg|jpeg|png)$/)) {
+      return cb(new Error('File is not supported!'));
+    }
+
+    cb(undefined, true);
+  }
+});
+
+router.post(
+  '/users/me/image',
+  auth,
+  upload.single('image'),
+  async (req, res) => {
+    try {
+      const buffer = await sharp(req.file.buffer)
+        .resize({ width: 250, height: 250 })
+        .png()
+        .toBuffer();
+      if (!buffer) {
+        return new Error('Please provide an image to upload!');
+      }
+      req.user.image = buffer;
+      await req.user.save();
+      res.send();
+    } catch (error) {
+      res.status(400).send({ error: error.message });
+    }
+  },
+  (error, req, res, next) => {
+    res.status(400).send({ error: error.message });
+  }
+);
+
+router.get('/users/me/image', auth, async (req, res) => {
+  const _id = req.user._id;
+  try {
+    const user = await User.findById(_id);
+
+    if (!user || !user.image) {
+      throw new Error({ error: 'No image found' });
+    }
+
+    res.set('Content-type', 'image/png');
+    res.send(user.image);
+  } catch (error) {
+    res.status(404).send(error);
+  }
+});
+
+router.delete('/users/me/image', auth, async (req, res) => {
+  try {
+    req.user.image = undefined;
+    await req.user.save();
+    res.send();
+  } catch (error) {
+    res.status(500).send(error);
+  }
+});
 module.exports = router;
