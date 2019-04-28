@@ -2,12 +2,14 @@ const express = require('express');
 const router = new express.Router();
 const auth = require('../middleware/auth');
 const User = require('../model/user');
+const { sendWelcome } = require('../mails/account');
 
 router.post('/users', async (req, res) => {
   const user = new User(req.body);
 
   try {
     await user.save();
+    sendWelcome(user.email, user.fname);
     const token = await user.generateToken();
     res.status(201).send({ user, token });
   } catch (error) {
